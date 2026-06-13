@@ -299,13 +299,20 @@ export class AccountPool {
     if (account.quotaResetAt && account.quotaResetAt <= now) {
       return false
     }
-    // 有明确的耗尽标记
+    // 有明确的耗尽标记 (402 quota exhausted from upstream)
     if (account.quotaExhaustedAt && account.quotaExhaustedAt > 0) {
       return true
     }
-    // 有配额数据且已用尽
+    // 配额已用尽 —— 但仅当账号没有 OVERAGE_CAPABLE 能力时才视为不可用。
+    // KIRO PRO 等订阅就算 quotaUsed > quotaLimit 仍然能跑（按 overage 计费），
+    // 把它们排除在轮询外会让一个 5x 超额的号永远轮不到，看着像"挂掉"。
+    // ProxyAccount 类型没声明 subscription，但持久化数据里有 —— 用 record
+    // 取值，与 api/accounts.ts 同步处理 query-subscription 的方式一致。
     if (account.quotaLimit && account.quotaLimit > 0 && (account.quotaUsed ?? 0) >= account.quotaLimit) {
-      return true
+      const sub = (account as unknown as Record<string, unknown>).subscription as
+        Record<string, unknown> | undefined
+      const overageCapable = sub?.overageCapability === 'OVERAGE_CAPABLE'
+      if (!overageCapable) return true
     }
     return false
   }
