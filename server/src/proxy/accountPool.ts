@@ -156,6 +156,14 @@ export class AccountPool {
 
       // 检查账号是否可用（含断路器状态）
       if (this.isAccountAvailable(account, now)) {
+        // round-robin 模式下选号时立刻推进 index：
+        // recordSuccess 在请求完成时才前进，对长任务（思考+工具调用几十秒）
+        // 期间打来的并发请求毫无作用——它们都看到同一个 currentIndex，被分配
+        // 到同一个账号，直到第一个完成才换号。立即推进让真并发也能均匀分摊。
+        // sticky 模式保留原行为（不在这里前进，让 recordSuccess 把指针钉住）。
+        if (this.strategy !== 'sticky') {
+          this.currentIndex = (idx + 1) % accountList.length
+        }
         return account
       }
     }
